@@ -24,8 +24,10 @@ def clear_text_and_reset_path():
 
 # Function to initialize or update JSON file
 def update_json_file(file_path, user_text, assistant_text):
+    global selected_model
     data = {
         'chat_creation': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        'model': selected_model,
         'message_history': []
     }
     
@@ -51,8 +53,8 @@ def load_text_json(filename):
 
     text_area.delete('1.0', tk.END)
     for message in data['message_history']:
-        # if message['role'] == "assist"
-        text_area.insert(tk.END, f"  {message['role'].upper()}: {message['content']}\n\n\n")
+        speaker = "USER" if message['role'] == "user" else selected_model.upper()
+        text_area.insert(tk.END, f"  {speaker}: {message['content']}\n\n\n")
 
 def append_text_json():
     global current_filepath
@@ -206,7 +208,7 @@ model_dropdown.set(selected_model)
 model_dropdown.pack(side=tk.LEFT)
 model_dropdown.bind("<<ComboboxSelected>>", on_model_select)
 
-# Input box and send button
+# Input box and send button 
 input_box = tk.Entry(input_frame)
 input_box.pack(side=tk.LEFT, expand=True, fill='x')
 send_button = tk.Button(input_frame, text='Send', command=append_text_json)
