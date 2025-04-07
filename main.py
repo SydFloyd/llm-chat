@@ -1,4 +1,5 @@
 import os
+import re
 import tkinter as tk
 from tkinter import ttk
 import tkinter.messagebox as messagebox
@@ -62,11 +63,12 @@ def append_text_json():
 
     text = input_box.get()
     if text:
-        if not current_filepath:
+        if current_filepath is None:
             # current_filepath = os.path.join(directory, datetime.now().strftime("%Y%m%d%H%M%S") + ".json")
             m = GPT(system_message='You create 1-5 word summaries of a prompt serving as the name for the conversation. Name should include only characters normally allowed in filenames.')
             chat_name = m.prompt(f'Given the users prompt below, provide a short name, no more than 5 words, for the conversation (based on the prompt) to help remind the user of the subject matter. Do not surround your name in quotes, or apply any other formatting.  Only include the name.\n\nPrompt: {text}\n\nName: ')
-            current_filepath = os.path.join(directory, chat_name.split('"')[0] + ".json")
+            chat_name_sanitized = re.sub(r'[<>:"/\\|?*]', '', chat_name).strip()
+            current_filepath = os.path.join(directory, chat_name_sanitized.split('"')[0] + ".json")
             message_history=[]
         else:
             with open(current_filepath, 'r') as file:
