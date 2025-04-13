@@ -26,16 +26,17 @@ def clear_text_and_reset_path():
 # Function to initialize or update JSON file
 def update_json_file(file_path, user_text, assistant_text):
     global selected_model
-    data = {
-        'chat_creation': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        'model': selected_model,
-        'message_history': []
-    }
     
     # Load existing data if file exists
     if os.path.exists(file_path):
         with open(file_path, 'r') as file:
             data = json.load(file)
+    else:    
+        data = {
+            'chat_creation': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'model': selected_model,
+            'message_history': []
+        }
 
     # Append new messages
     data['message_history'].append({'role': 'user', 'content': user_text})
@@ -54,7 +55,7 @@ def load_text_json(filename):
 
     text_area.delete('1.0', tk.END)
     for message in data['message_history']:
-        speaker = "USER" if message['role'] == "user" else selected_model.upper()
+        speaker = "User" if message['role'] == "user" else data['model']
         text_area.insert(tk.END, f"  {speaker}: {message['content']}\n\n\n")
 
 def append_text_json():
@@ -200,10 +201,10 @@ text_area.pack(expand=True, fill='both')
 def on_model_select(event):
     global selected_model
     selected_model = model_dropdown.get()
+    clear_text_and_reset_path()
 
 # Dropdown for model selection
 selected_model = list(openai_models.keys())[0]
-# model_options = ['gpt-4', 'gpt-4-turbo-preview', 'gpt-3.5-turbo', "claude-3-haiku-20240307", "claude-3-sonnet-20240229", "claude-3-opus-20240229"]
 model_options = list(openai_models.keys()) + list(anthropic_models.keys())
 model_dropdown = tk.ttk.Combobox(dropdown_frame, values=model_options)
 model_dropdown.set(selected_model)
