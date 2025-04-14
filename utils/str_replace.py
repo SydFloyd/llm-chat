@@ -1,4 +1,8 @@
 import os
+import logging
+
+# Get module-level logger
+logger = logging.getLogger(__name__)
 
 from utils.undo_edit import with_backup
 
@@ -9,22 +13,26 @@ def str_replace(file_path, old_str, new_str):
     
     Args:
         file_path (str): Path to the file to modify
-        old_str (str): The text to replace (must match exactly, including whitespace and indentation)
-        new_str (str): The new text to insert in place of the old text
+        old_str (str): The string to be replaced (must match exactly, including whitespace and indentation)
+        new_str (str): The new string to insert in place of the old text
                                       
     Returns:
-        tuple: (content or message, error_occurred)
+        tuple: (content or message, error_occurred) - Returns the modified content or error message
     """
+    logger.debug(f"str_replace called with path={file_path}, old_str_len={len(old_str)}, new_str_len={len(new_str)}")
     try:
         # Validate file path
         if not os.path.exists(file_path):
+            logger.warning(f"File not found: {file_path}")
             return f"Error: File '{file_path}' does not exist", True
             
         if not os.path.isfile(file_path):
+            logger.warning(f"Path is not a file: {file_path}")
             return f"Error: '{file_path}' is not a file", True
             
         # Validate input parameters
         if old_str == '':
+            logger.warning("Empty 'old_str' parameter")
             return "Error: 'old_str' cannot be empty", True
             
         try:
@@ -34,13 +42,16 @@ def str_replace(file_path, old_str, new_str):
                 
             # Find all occurrences of the text
             matches = content.count(old_str)
+            logger.debug(f"Found {matches} occurrences of the text to replace in {file_path}")
             
             # Handle no matches
             if matches == 0:
+                logger.warning(f"No match found for replacement in {file_path}")
                 return "Error: No match found for replacement. Please check your text and try again.", True
                 
             # Handle multiple matches
             if matches > 1:
+                logger.info(f"Multiple matches ({matches}) found in {file_path}, providing context")
                 # For multiple matches, provide context for each match to help Claude
                 match_info = []
                 remaining_content = content
@@ -93,15 +104,19 @@ def str_replace(file_path, old_str, new_str):
                 return f"Error: Found {matches} matches for replacement text. Please provide more context to make a unique match.\n\n{context_msg}", True
             
             # Replace the text (only one match found)
+            logger.info(f"Found single match in {file_path}, performing replacement")
             new_content = content.replace(old_str, new_str)
             
             # Write the modified content back to the file
             try:
                 with open(file_path, 'w', encoding='utf-8') as f:
                     f.write(new_content)
+                logger.info(f"Successfully replaced text in {file_path}")
             except PermissionError:
+                logger.error(f"Permission denied writing to file: {file_path}")
                 return f"Error: Permission denied writing to file '{file_path}'", True
             except Exception as e:
+                logger.error(f"Error writing to file {file_path}: {str(e)}")
                 return f"Error writing to file '{file_path}': {str(e)}", True
                 
             # Return the new content
