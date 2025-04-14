@@ -125,7 +125,7 @@ def str_replace(file_path, old_str, new_str):
             
             # Append verification message to the content
             file_size = os.path.getsize(file_path)
-            result_msg = f"Text replacement successful in '{file_path}' (size: {file_size} bytes).\n{verification_msg}\n\n{new_content}"
+            result_msg = f"Text replacement successful in '{file_path}' (size: {file_size} bytes).\n{verification_msg}"
             return result_msg, verification_error
             
         except UnicodeDecodeError:
