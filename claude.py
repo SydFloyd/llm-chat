@@ -176,6 +176,7 @@ class Claude:
             if content.type == "thinking":
                 # Handle thinking block
                 print(f"\n\n    Thinking: {content.thinking}")
+                saved_response.append({"type": "thinking", "thinking": content.thinking, "signature": content.signature})
 
             elif content.type == "text":
                 # Handle text block
@@ -247,7 +248,7 @@ if __name__ == "__main__":
     m = Claude(system_message=system_message, thinking_budget=2048, text_editor=True)
     logger.info("Claude instance initialized")
     prompt = (
-        "What are the most helpful improvements we can make to claude.py? The ultimate goal is to make it a better coding assistant. "
+        "Add a verification step so Claude receives feedback from file operations. "
     )
     print(m.prompt(prompt))
 
