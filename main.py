@@ -12,10 +12,6 @@ from claude import Claude, list_anthropic_models
 openai_models = list_openai_models()
 anthropic_models = list_anthropic_models()
 
-#from time import sleep
-#while not os.environ.get('DISPLAY'):
-#    sleep(5) # sleep until display is ready
-
 current_filepath = None
 
 def clear_text_and_reset_path():
@@ -76,8 +72,6 @@ def append_text_json():
                 chat = json.load(file)
                 message_history=chat['message_history']
 
-        # Print every other letter of the user's message
-        # modified_text = text[::2]
         if selected_model in anthropic_models.keys():
             m = Claude(model=anthropic_models[selected_model], injected_messages=message_history)
         elif selected_model in openai_models.keys():
