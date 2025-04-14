@@ -310,51 +310,17 @@ class ClaudeClient:
         # Process each content block in the response
         for content in response.content:
             if content.type == "thinking":
-                # Handle thinking block
-                print(f"\n\n    Thinking: {content.thinking}")
-                saved_response.append({
-                    "type": "thinking", 
-                    "thinking": content.thinking, 
-                    "signature": content.signature
-                })
-
+                saved_response.append(self._handle_thinking_content(content))
             elif content.type == "text":
-                # Handle text block
-                print(f"\n\n    Claude: {content.text}")
-                saved_response.append({"type": "text", "text": content.text})
-
+                saved_response.append(self._handle_text_content(content))
             elif content.type == "tool_use":
-                # Handle tool use
-                command = content.input.get("command", "ERROR")
-                path = content.input.get("path", "ERROR")
-                print(f"\n\n    Tool: {command} called with {path}")
-                
+                tool_result = self._handle_tool_content(content)
+                saved_response.append(tool_result["saved_response"])
                 tool_called = True
-                saved_response.append({
-                    "type": "tool_use", 
-                    "id": content.id,
-                    "name": content.name,
-                    "input": content.input
-                })
-                
-                # Execute the tool operation
-                result, is_error = ToolHandler.handle_tool(content)
-                
-                # Format the tool result for Claude
-                tool_result = {
-                    "type": "tool_result",
-                    "tool_use_id": content.id,
-                    "content": result
-                }
-                if is_error:
-                    tool_result["is_error"] = is_error
-                    logger.warning(f"Tool Error: {result}")
-                    
-                tool_results.append(tool_result)
+                tool_results.extend(tool_result["tool_results"])
 
         # Update conversation history
         self.message_history.append({"role": "user", "content": prompt})
-            
         self.message_history.append({"role": "assistant", "content": saved_response})
         
         # If a tool was called, continue the conversation with the tool results
@@ -363,6 +329,59 @@ class ClaudeClient:
             
         # Return the response text for the final response
         return self._extract_response_text(saved_response)
+        
+    def _handle_thinking_content(self, content: Any) -> Dict:
+        """Handle thinking content from Claude's response."""
+        thinking_text = cfg.colors.thinking(f"\n\n\n    Thinking:\n\n{content.thinking}")
+        print(thinking_text)
+        return {
+            "type": "thinking", 
+            "thinking": content.thinking, 
+            "signature": content.signature
+        }
+        
+    def _handle_text_content(self, content: Any) -> Dict:
+        """Handle text content from Claude's response."""
+        claude_text = cfg.colors.claude_output(f"\n\n\n    Claude:\n\n{content.text}")
+        print(claude_text)
+        return {"type": "text", "text": content.text}
+        
+    def _handle_tool_content(self, content: Any) -> Dict:
+        """
+        Handle tool use content from Claude's response.
+        
+        Returns:
+            Dict containing saved_response and tool_results
+        """
+        command = content.input.get("command", "ERROR")
+        path = content.input.get("path", "ERROR")
+        tool_text = cfg.colors.tool_call(f"\n\n\n    Tool: {command} called on {path}")
+        print(tool_text)
+        
+        saved_response = {
+            "type": "tool_use", 
+            "id": content.id,
+            "name": content.name,
+            "input": content.input
+        }
+        
+        # Execute the tool operation
+        result, is_error = ToolHandler.handle_tool(content)
+        
+        # Format the tool result for Claude
+        tool_result = {
+            "type": "tool_result",
+            "tool_use_id": content.id,
+            "content": result
+        }
+        if is_error:
+            tool_result["is_error"] = is_error
+            logger.warning(f"Tool Error: {result}")
+            
+        return {
+            "saved_response": saved_response,
+            "tool_results": [tool_result]
+        }
     
     def _extract_response_text(self, saved_response: List[Dict]) -> str:
         """Extract the text content from the response."""
@@ -456,15 +475,16 @@ if __name__ == "__main__":
     
     # Example initial prompt
     initial_prompt = (
-        "What does claude_frontend.py do?"
+        "Tell me what improvements can be made to claude.py.  Do not make any changes yet. "
     )
-    print("\nSending initial prompt...")
+    print("Initial prompt sent.")
     client.prompt(initial_prompt)
     
     # Main interaction loop
     while True:
         try:
-            user_prompt = input("\nPrompt: ")
+            prompt_text = cfg.colors.user_prompt("\nPrompt: ")
+            user_prompt = input(prompt_text)
             if user_prompt.lower() in ("exit", "quit"):
                 logger.info("User requested exit")
                 break
