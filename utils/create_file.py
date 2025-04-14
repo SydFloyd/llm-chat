@@ -1,5 +1,6 @@
 import os
 import logging
+from utils.verify_changes import verify_changes
 
 # Get module-level logger
 logger = logging.getLogger(__name__)
@@ -60,10 +61,14 @@ def create_file(file_path, file_text='', overwrite=False):
             logger.error(f"Error writing to file '{file_path}': {str(e)}")
             return f"Error writing to file '{file_path}': {str(e)}", True
             
-        # Return success message
+        # Verify the file after creation
+        verification_msg, verification_error = verify_changes(file_path)
+        
+        # Return success message with verification results
         action = "updated" if os.path.exists(file_path) and overwrite else "created"
         logger.info(f"File '{file_path}' {action} successfully")
-        return f"File '{file_path}' {action} successfully.", False
+        result_msg = f"File '{file_path}' {action} successfully.\n{verification_msg}"
+        return result_msg, verification_error
         
     except Exception as e:
         logger.error(f"Unexpected error creating file '{file_path}': {str(e)}")

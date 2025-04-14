@@ -5,6 +5,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from utils.undo_edit import with_backup
+from utils.verify_changes import verify_changes
 
 @with_backup
 def str_replace(file_path, old_str, new_str):
@@ -119,8 +120,13 @@ def str_replace(file_path, old_str, new_str):
                 logger.error(f"Error writing to file {file_path}: {str(e)}")
                 return f"Error writing to file '{file_path}': {str(e)}", True
                 
-            # Return the new content
-            return new_content, False
+            # Verify the file after replacement
+            verification_msg, verification_error = verify_changes(file_path)
+            
+            # Append verification message to the content
+            file_size = os.path.getsize(file_path)
+            result_msg = f"Text replacement successful in '{file_path}' (size: {file_size} bytes).\n{verification_msg}\n\n{new_content}"
+            return result_msg, verification_error
             
         except UnicodeDecodeError:
             return f"Error: File '{file_path}' contains binary or non-text content", True

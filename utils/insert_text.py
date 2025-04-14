@@ -2,6 +2,7 @@ import os
 import logging
 
 from utils.undo_edit import with_backup
+from utils.verify_changes import verify_changes
 
 # Get module-level logger
 logger = logging.getLogger(__name__)
@@ -75,7 +76,10 @@ def insert_text(file_path, new_str, insert_line=0, preserve_newline=True):
                 logger.error(f"Error writing to file '{file_path}': {str(e)}")
                 return f"Error writing to file '{file_path}': {str(e)}", True
                 
-            # Return success message with file line info
+            # Verify the file after insertion
+            verification_msg, verification_error = verify_changes(file_path)
+                
+            # Return success message with file line info and verification results
             total_lines = len(lines)
             if insert_line == 0:
                 position = "beginning of file"
@@ -83,7 +87,8 @@ def insert_text(file_path, new_str, insert_line=0, preserve_newline=True):
                 position = f"after line {insert_line}"
                 
             logger.info(f"Text inserted at {position} in '{file_path}' (now {total_lines} lines total)")
-            return f"Text inserted at {position} in '{file_path}' (now {total_lines} lines total).", False
+            result_msg = f"Text inserted at {position} in '{file_path}' (now {total_lines} lines total).\n{verification_msg}"
+            return result_msg, verification_error
             
         except UnicodeDecodeError:
             logger.error(f"File '{file_path}' contains binary or non-text content")
