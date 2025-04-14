@@ -96,7 +96,9 @@ class Claude:
         elif command == 'str_replace':
             # Replace text in file
             old_str = input_params.get('old_str', '')
-            new_str = input_params.get('new_str', '')
+            new_str = input_params.get('new_str', None)
+            if not new_str:
+                return "Error: 'new_str' is required", True
 
             return str_replace(file_path, old_str, new_str)
         
@@ -158,7 +160,6 @@ class Claude:
             if content.type == "thinking":
                 # Handle thinking block
                 print(f"\n\n    Thinking: {content.thinking}")
-                answer = content.thinking
 
             elif content.type == "text":
                 # Handle text block
@@ -172,6 +173,8 @@ class Claude:
                                        "id": content.id,
                                        "name": content.name,
                                        "input": content.input})
+                print(f"\n\n    Tool Call: {content.name}")
+                print(f"\n\n    Tool Input: {content.input}")
                 result, is_error = self.handle_editor_tool(content)
                 
                 # Return result to Claude
@@ -211,7 +214,7 @@ if __name__ == "__main__":
 
     m = Claude(system_message=system_message, text_editor=True)
     # m = Claude(thinking_budget=1024)
-    print(m.prompt("What does main.py do?"))
+    print(m.prompt("Please test the text editor. Use the str_replace command to replace some text in utils/str_replace.py."))
 
     while True:
         prompt = input("Prompt: ")
