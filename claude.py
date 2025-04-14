@@ -17,7 +17,7 @@ from utils.undo_edit import undo_edit
 class Claude:
     def __init__(self, 
                  model='claude-3-7-sonnet-20250219', 
-                 max_tokens=2048, 
+                 max_tokens=2048*4, 
                  temperature=1, 
                  system_message=None, 
                  thinking_budget=0,
@@ -244,11 +244,10 @@ if __name__ == "__main__":
         else:
             system_message += f"\n Extra information: {path}\n"
 
-    m = Claude(system_message=system_message, text_editor=True)
-    # m = Claude(thinking_budget=1024)
+    m = Claude(system_message=system_message, thinking_budget=2048, text_editor=True)
     logger.info("Claude instance initialized")
     prompt = (
-        "Please finish adding logging to utils/view_file.py. "
+        "What are the most helpful improvements we can make to claude.py? The ultimate goal is to make it a better coding assistant. "
     )
     print(m.prompt(prompt))
 
