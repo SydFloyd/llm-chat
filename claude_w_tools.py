@@ -418,20 +418,26 @@ def load_context_from_file(context_file="llm.txt") -> str:
         Compiled system message with included file contents
     """
     base_message = (
-        "Below is relavent context for the task at hand. "
+        "Below is relevant context for the task at hand. "
         "Please use this information to assist in the task. "
     )
     
     try:
-        with open(context_file, "r") as f:
+        with open(context_file, "r", encoding="utf-8") as f:
             lines_to_include = f.readlines()
             
         lines_to_include = [x.strip() for x in lines_to_include]
         
         for line in lines_to_include:
             if os.path.isfile(line):
-                with open(line, "r") as f:
-                    base_message += f"\n{line} file:\n{f.read()}\n\n"
+                try:
+                    # Try UTF-8 first, which is most common
+                    with open(line, "r", encoding="utf-8") as f:
+                        base_message += f"\n{line} file:\n{f.read()}\n\n"
+                except UnicodeDecodeError:
+                    # Fall back to latin-1, which can decode any byte value
+                    with open(line, "r", encoding="latin-1") as f:
+                        base_message += f"\n{line} file:\n{f.read()}\n\n"
             elif os.path.isdir(line):
                 base_message += f"\n{line} dir:\n{os.listdir(line)}\n\n"
             else:
@@ -461,12 +467,15 @@ if __name__ == "__main__":
         text_editor=True
     )
     logger.info("Claude client initialized")
+
+    context = load_context_from_file("llm.txt")
+
+    print(context)
     
     # Example initial prompt
     initial_prompt = (
-        load_context_from_file("llm.txt")
-        "Suggest improvements that can be made to claude.py for better maintainability, simplicity, robustness, etc. "
-        "We don't care about streaming, and want to keep things as simple but effective as possible."
+        context +
+        "Update main.py so that ctrl+backspace deletes the previous word in the text area. "
     )
     print("Initial prompt sent.")
     client.prompt(initial_prompt)
