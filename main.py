@@ -213,8 +213,89 @@ send_button.pack(side=tk.RIGHT)
 plus_button = tk.Button(dropdown_frame, text='+', command=clear_text_and_reset_path)
 plus_button.pack(side=tk.RIGHT)
     
+# Function to delete the previous word in the input box
+def delete_previous_word_input(event):
+    current_pos = input_box.index(tk.INSERT)
+    text = input_box.get()
+    
+    # If at start of input, do nothing
+    if current_pos == 0:
+        return "break"
+    
+    # Get text from beginning to current position
+    text_before = text[:current_pos]
+    
+    # If we're at a space, first handle deleting back to the previous word
+    if text_before and text_before[-1].isspace():
+        # Delete any trailing whitespace
+        match_spaces = re.search(r'\s+$', text_before)
+        if match_spaces:
+            space_start = current_pos - len(match_spaces.group(0))
+            input_box.delete(space_start, current_pos)
+            return "break"
+    
+    # Look for the last word boundary - find where the previous word starts
+    # This pattern finds the last transition from space to non-space
+    match = re.search(r'(^|\s)(\S+)$', text_before)
+    if match:
+        # Delete from the start of the current word to the cursor
+        word_start = current_pos - len(match.group(2))
+        input_box.delete(word_start, current_pos)
+    else:
+        # If no word boundary found, delete everything
+        input_box.delete(0, current_pos)
+    
+    return "break"  # Prevent the default handling
+
+# Function to delete the previous word in the text area
+def delete_previous_word_textarea(event):
+    current_pos = text_area.index(tk.INSERT)
+    # Get the line and column of current position
+    line, col = map(int, current_pos.split('.'))
+    
+    # If at the beginning of a line and not the first line, move to end of previous line
+    if col == 0 and line > 1:
+        prev_line = line - 1
+        prev_line_length = int(text_area.index(f"{prev_line}.end").split('.')[1])
+        text_area.delete(f"{prev_line}.{prev_line_length}", current_pos)
+        return "break"
+    
+    # If at beginning of first line, do nothing
+    if col == 0 and line == 1:
+        return "break"
+    
+    # Get text from beginning of line to current position
+    line_text = text_area.get(f"{line}.0", current_pos)
+    
+    # If we're at a space, first handle deleting back to the previous word
+    if line_text and line_text[-1].isspace():
+        # Delete any trailing whitespace
+        match_spaces = re.search(r'\s+$', line_text)
+        if match_spaces:
+            space_start_col = col - len(match_spaces.group(0))
+            text_area.delete(f"{line}.{space_start_col}", current_pos)
+            return "break"
+    
+    # Look for the last word boundary - find where the previous word starts
+    match = re.search(r'(^|\s)(\S+)$', line_text)
+    if match:
+        # Delete from the start of the current word to the cursor
+        word_start_col = col - len(match.group(2))
+        text_area.delete(f"{line}.{word_start_col}", current_pos)
+    else:
+        # If no word boundary found, delete from beginning of line
+        text_area.delete(f"{line}.0", current_pos)
+    
+    return "break"  # Prevent the default handling
+
 app.bind('<Return>', lambda event: append_text_json())
-app.bind("<Control-n>", clear_text_and_reset_path())
+app.bind("<Control-n>", lambda event: clear_text_and_reset_path())  # Fixed: added event parameter
+# Bind Ctrl+Backspace for both widgets
+text_area.bind("<Control-BackSpace>", delete_previous_word_textarea)
+input_box.bind("<Control-BackSpace>", delete_previous_word_input)
+# Alternative binding formats for different platforms
+text_area.bind("<Control-h>", delete_previous_word_textarea)
+input_box.bind("<Control-h>", delete_previous_word_input)
 
 # Adjust column weights for layout
 app.grid_columnconfigure(0, weight=0)
