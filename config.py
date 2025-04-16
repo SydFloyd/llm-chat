@@ -24,7 +24,7 @@ class LoggingConfig:
 class ColorConfig:
     def __init__(self):
         # Define colors for different console outputs
-        self.thinking_color = os.environ.get("THINKING_COLOR", Fore.RED) 
+        self.thinking_color = os.environ.get("THINKING_COLOR", Fore.GREEN) 
         self.user_prompt_color = os.environ.get("USER_PROMPT_COLOR", Fore.YELLOW)
         self.claude_output_color = os.environ.get("CLAUDE_OUTPUT_COLOR", Fore.WHITE)
         self.tool_call_color = os.environ.get("TOOL_CALL_COLOR", Fore.BLUE)
