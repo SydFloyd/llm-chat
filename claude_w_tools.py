@@ -418,25 +418,24 @@ def load_context_from_file(context_file="llm.txt") -> str:
         Compiled system message with included file contents
     """
     base_message = (
-        "You are a helpful coding assistant. "
-        "You are on a Windows machine. "
-        "Make your tool calls with relative paths. "
+        "Below is relavent context for the task at hand. "
+        "Please use this information to assist in the task. "
     )
     
     try:
         with open(context_file, "r") as f:
-            paths_to_include = f.readlines()
+            lines_to_include = f.readlines()
             
-        paths_to_include = [x.strip() for x in paths_to_include if x.strip()]
+        lines_to_include = [x.strip() for x in lines_to_include]
         
-        for path in paths_to_include:
-            if os.path.isfile(path):
-                with open(path, "r") as f:
-                    base_message += f"\n{path} file:\n{f.read()}\n\n"
-            elif os.path.isdir(path):
-                base_message += f"\n{path} dir:\n{os.listdir(path)}\n\n"
+        for line in lines_to_include:
+            if os.path.isfile(line):
+                with open(line, "r") as f:
+                    base_message += f"\n{line} file:\n{f.read()}\n\n"
+            elif os.path.isdir(line):
+                base_message += f"\n{line} dir:\n{os.listdir(line)}\n\n"
             else:
-                base_message += f"\n{path}\n"
+                base_message += f"\n{line}\n"
     except Exception as e:
         logger.error(f"Error loading context from {context_file}: {str(e)}")
         
@@ -449,7 +448,11 @@ if __name__ == "__main__":
     logger.info("Application starting")
     
     # Load system message with additional context
-    system_message = load_context_from_file("llm.txt")
+    system_message = (
+        "You are a helpful coding assistant. "
+        "You are on a Windows machine. "
+        "Make your tool calls with relative paths. "
+    )
     
     # Initialize the Claude client
     client = ClaudeClient(
@@ -461,6 +464,7 @@ if __name__ == "__main__":
     
     # Example initial prompt
     initial_prompt = (
+        load_context_from_file("llm.txt")
         "Suggest improvements that can be made to claude.py for better maintainability, simplicity, robustness, etc. "
         "We don't care about streaming, and want to keep things as simple but effective as possible."
     )
