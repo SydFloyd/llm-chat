@@ -225,25 +225,36 @@ def delete_previous_word_input(event):
     # Get text from beginning to current position
     text_before = text[:current_pos]
     
-    # If we're at a space, first handle deleting back to the previous word
-    if text_before and text_before[-1].isspace():
-        # Delete any trailing whitespace
-        match_spaces = re.search(r'\s+$', text_before)
-        if match_spaces:
-            space_start = current_pos - len(match_spaces.group(0))
-            input_box.delete(space_start, current_pos)
-            return "break"
+    # This pattern finds the last word and any space before the cursor
+    # It captures either:
+    # 1. The previous word + its following spaces (if cursor is after spaces)
+    # 2. Just the current word (if cursor is directly after a word)
+    match = re.search(r'(\S+)(\s*)$', text_before)
     
-    # Look for the last word boundary - find where the previous word starts
-    # This pattern finds the last transition from space to non-space
-    match = re.search(r'(^|\s)(\S+)$', text_before)
     if match:
-        # Delete from the start of the current word to the cursor
-        word_start = current_pos - len(match.group(2))
+        # Word found, delete from the start of the word
+        word = match.group(1)
+        spaces = match.group(2)
+        
+        # If we're right after the word (no spaces), look for the previous word + spaces
+        if not spaces and current_pos > len(word):
+            # Look for the previous word-space combo
+            remaining_text = text_before[:-len(word)]
+            prev_match = re.search(r'(\S+)(\s+)$', remaining_text)
+            if prev_match:
+                prev_word = prev_match.group(1)
+                prev_spaces = prev_match.group(2)
+                # Delete the previous word + its spaces
+                prev_start = current_pos - len(word) - len(prev_spaces) - len(prev_word)
+                input_box.delete(prev_start, current_pos - len(word))
+                return "break"
+        
+        # Delete the word (and its spaces if any)
+        word_start = current_pos - len(word) - len(spaces)
         input_box.delete(word_start, current_pos)
     else:
-        # If no word boundary found, delete everything
-        input_box.delete(0, current_pos)
+        # If no match (rare case), just delete the last character
+        input_box.delete(current_pos-1, current_pos)
     
     return "break"  # Prevent the default handling
 
@@ -267,23 +278,31 @@ def delete_previous_word_textarea(event):
     # Get text from beginning of line to current position
     line_text = text_area.get(f"{line}.0", current_pos)
     
-    # If we're at a space, first handle deleting back to the previous word
-    if line_text and line_text[-1].isspace():
-        # Delete any trailing whitespace
-        match_spaces = re.search(r'\s+$', line_text)
-        if match_spaces:
-            space_start_col = col - len(match_spaces.group(0))
-            text_area.delete(f"{line}.{space_start_col}", current_pos)
-            return "break"
+    # This pattern finds the last word and any space before the cursor
+    match = re.search(r'(\S+)(\s*)$', line_text)
     
-    # Look for the last word boundary - find where the previous word starts
-    match = re.search(r'(^|\s)(\S+)$', line_text)
     if match:
-        # Delete from the start of the current word to the cursor
-        word_start_col = col - len(match.group(2))
+        word = match.group(1)
+        spaces = match.group(2)
+        
+        # If we're right after the word (no spaces), look for the previous word + spaces
+        if not spaces and col > len(word):
+            # Look for the previous word-space combo
+            remaining_text = line_text[:-len(word)]
+            prev_match = re.search(r'(\S+)(\s+)$', remaining_text)
+            if prev_match:
+                prev_word = prev_match.group(1)
+                prev_spaces = prev_match.group(2)
+                # Delete the previous word + its spaces
+                prev_start_col = col - len(word) - len(prev_spaces) - len(prev_word)
+                text_area.delete(f"{line}.{prev_start_col}", f"{line}.{col - len(word)}")
+                return "break"
+        
+        # Delete the word (and its spaces if any)
+        word_start_col = col - len(word) - len(spaces)
         text_area.delete(f"{line}.{word_start_col}", current_pos)
     else:
-        # If no word boundary found, delete from beginning of line
+        # If no match, delete from beginning of line
         text_area.delete(f"{line}.0", current_pos)
     
     return "break"  # Prevent the default handling
