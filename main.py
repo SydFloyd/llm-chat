@@ -93,6 +93,9 @@ class ChatApp:
         self.root = root
         root.title("Chat Application")
         
+        # Set a reasonable default size
+        root.geometry("1000x700")
+        
         # Initialize models
         self.openai_models = list_openai_models()
         self.anthropic_models = list_anthropic_models()
@@ -115,40 +118,45 @@ class ChatApp:
     
     def _create_ui(self):
         """Create the user interface"""
-        # Create frame containers
-        self.file_frame_container = tk.Frame(self.root)
-        self.viewport_frame = tk.Frame(self.root)
-        self.input_frame = tk.Frame(self.root)
+        # Configure the main window grid
+        self.root.grid_columnconfigure(1, weight=1)  # Make column 1 expandable
+        self.root.grid_rowconfigure(0, weight=1)     # Make row 0 expandable
+        
+        # Create a PanedWindow oriented horizontally
+        self.paned_window = tk.PanedWindow(self.root, orient=tk.HORIZONTAL)
+        self.paned_window.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
+        
+        # Create frames for chat list and chat view
+        self.file_frame_container = tk.Frame(self.paned_window, width=200, bg="lightgray")
+        self.file_frame_container.pack_propagate(False)  # Prevent the frame from shrinking
+        
+        self.viewport_frame = tk.Frame(self.paned_window, bg="white")
+        
+        # Add the frames to the paned window with initial sizes
+        self.paned_window.add(self.file_frame_container)
+        self.paned_window.add(self.viewport_frame)
+        
+        # Create bottom row frames
         self.dropdown_frame = tk.Frame(self.root)
+        self.dropdown_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=5)
         
-        # Position frame containers in grid
-        self.file_frame_container.grid(row=0, column=0, sticky="ns")
-        self.viewport_frame.grid(row=0, column=1, sticky="nsew")
-        self.input_frame.grid(row=1, column=1, sticky="ew")
-        self.dropdown_frame.grid(row=1, column=0, sticky="ns")
+        self.input_frame = tk.Frame(self.root)
+        self.input_frame.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
         
-        # Create scrollable file list area
+        # Create all UI components
         self._create_file_list()
-        
-        # Create chat display area
         self._create_chat_display()
-        
-        # Create input area
         self._create_input_area()
-        
-        # Create model selection area
         self._create_model_selection()
-        
-        # Configure grid weights
-        self.root.grid_columnconfigure(0, weight=0)
-        self.root.grid_columnconfigure(1, weight=4)
-        self.root.grid_rowconfigure(0, weight=1)
-        self.root.grid_rowconfigure(1, weight=0)
     
     def _create_file_list(self):
         """Create the scrollable file list area"""
+        # Create a label for the file list section
+        file_label = tk.Label(self.file_frame_container, text="Chat History", bg="lightgray", font=("Arial", 10, "bold"))
+        file_label.pack(side="top", fill="x", padx=5, pady=5)
+        
         # Create canvas and scrollbar for file list
-        self.file_canvas = tk.Canvas(self.file_frame_container)
+        self.file_canvas = tk.Canvas(self.file_frame_container, bg="lightgray", highlightthickness=0)
         self.file_scrollbar = tk.Scrollbar(self.file_frame_container, orient="vertical", command=self.file_canvas.yview)
         
         # Configure canvas and scrollbar
@@ -157,11 +165,14 @@ class ChatApp:
         self.file_canvas.configure(yscrollcommand=self.file_scrollbar.set)
         
         # Create frame for file buttons
-        self.file_frame = tk.Frame(self.file_canvas)
-        self.file_canvas.create_window((0, 0), window=self.file_frame, anchor="nw")
+        self.file_frame = tk.Frame(self.file_canvas, bg="lightgray")
+        self.file_canvas.create_window((0, 0), window=self.file_frame, anchor="nw", width=self.file_canvas.winfo_width())
         
         # Configure canvas to update scrollregion when file_frame changes
         self.file_frame.bind("<Configure>", self._on_file_frame_configure)
+        
+        # Make the canvas resize with its container
+        self.file_frame_container.bind("<Configure>", self._on_file_container_configure)
     
     def _create_chat_display(self):
         """Create the chat display area"""
@@ -304,21 +315,28 @@ class ChatApp:
             file_path = os.path.join(self.chat_manager.directory, file)
             
             # Create a row frame for this file
-            file_frame_row = tk.Frame(self.file_frame)
-            file_frame_row.pack(fill='x', expand=False)
+            file_frame_row = tk.Frame(self.file_frame, bg="lightgray")
+            file_frame_row.pack(fill='x', expand=False, padx=2, pady=2)
             
             # Create buttons
             btn = tk.Button(file_frame_row, text=file.split('.')[0], 
-                           command=lambda f=file_path: self._load_chat(f))
+                           command=lambda f=file_path: self._load_chat(f),
+                           anchor="w", relief=tk.FLAT, bg="#e0e0e0")
             btn.pack(side=tk.LEFT, fill='x', expand=True)
             
             rename_btn = tk.Button(file_frame_row, text='..', 
-                                  command=lambda f=file_path: self.rename_chat(f))
+                                  command=lambda f=file_path: self.rename_chat(f),
+                                  relief=tk.FLAT, bg="#e0e0e0")
             rename_btn.pack(side=tk.RIGHT)
             
             del_btn = tk.Button(file_frame_row, text='🗑', 
-                               command=lambda f=file_path: self.delete_chat(f))
+                               command=lambda f=file_path: self.delete_chat(f),
+                               relief=tk.FLAT, bg="#e0e0e0")
             del_btn.pack(side=tk.RIGHT)
+            
+        # Force update to recalculate scroll region
+        self.file_frame.update_idletasks()
+        self.file_canvas.configure(scrollregion=self.file_canvas.bbox("all"))
     
     def _load_chat(self, filepath):
         """Load a chat from file and display it"""
@@ -328,6 +346,12 @@ class ChatApp:
     def _on_file_frame_configure(self, event):
         """Handle file frame configuration to update scrollbar"""
         self.file_canvas.configure(scrollregion=self.file_canvas.bbox("all"))
+        
+    def _on_file_container_configure(self, event):
+        """Resize the canvas when the container changes size"""
+        # Update the canvas size
+        width = event.width - self.file_scrollbar.winfo_width()
+        self.file_canvas.itemconfig(1, width=width)  # Update the window width
     
     def _on_model_select(self, event):
         """Handle model selection from dropdown"""
@@ -429,6 +453,10 @@ if __name__ == "__main__":
     # Create the main Tkinter window
     root = tk.Tk()
     root.title("Chat Application")
+    
+    # Set minimum and default window size
+    root.minsize(800, 600)
+    root.geometry("1000x700")
     
     # Create the chat application
     app = ChatApp(root)
