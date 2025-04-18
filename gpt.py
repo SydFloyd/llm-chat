@@ -8,9 +8,11 @@ openai_client = OpenAI(
 def list_openai_models():
     return {
         "GPT 4o": "gpt-4o",
+        "GPT 4.1": "gpt-4.1",
         "ChatGPT 4o": "chatgpt-4o-latest",
         "GPT 3.5": "gpt-3.5-turbo",
         "GPT o3 mini": "o3-mini",
+        "GPT o3": "o3",
         "GPT o1 mini": "o1-mini",
         "o1 (expensive)": "o1",
     }
