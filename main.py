@@ -177,13 +177,39 @@ class ChatApp:
     def _create_chat_display(self):
         """Create the chat display area"""
         # Create text area with scrollbar
-        self.text_area = tk.Text(self.viewport_frame, wrap=tk.WORD)
+        self.text_area = tk.Text(self.viewport_frame, wrap=tk.WORD, padx=10, pady=10)
         self.text_scrollbar = tk.Scrollbar(self.viewport_frame, command=self.text_area.yview)
         
         # Configure text area and scrollbar
         self.text_area['yscrollcommand'] = self.text_scrollbar.set
         self.text_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.text_area.pack(expand=True, fill='both')
+        
+        # Set a nice base font
+        base_font = ("Segoe UI", 10)
+        self.text_area.configure(font=base_font)
+        
+        # No markdown formatting
+        
+        # Configure tags for user/assistant messages with better visual differentiation
+        # Use only supported tag options (removing pady, padx, relief, borderwidth)
+        self.text_area.tag_configure("user_header", 
+                                    background="#e1f5fe", 
+                                    font=(base_font[0], base_font[1], "bold"))
+        
+        self.text_area.tag_configure("assistant_header", 
+                                    background="#e8f5e9", 
+                                    font=(base_font[0], base_font[1], "bold"))
+        
+        self.text_area.tag_configure("user_content", 
+                                    background="#f5f5f5",
+                                    lmargin1=20,
+                                    lmargin2=20)
+        
+        self.text_area.tag_configure("assistant_content", 
+                                    background="#ffffff",
+                                    lmargin1=20,
+                                    lmargin2=20)
     
     def _create_input_area(self):
         """Create the input area"""
@@ -268,9 +294,31 @@ class ChatApp:
         data = self.chat_manager.load_chat(filepath)
         
         self.text_area.delete('1.0', tk.END)
-        for message in data['message_history']:
-            speaker = "User" if message['role'] == "user" else data['model']
-            self.text_area.insert(tk.END, f"  {speaker}: {message['content']}\n\n\n")
+        self.text_area.config(state=tk.NORMAL)  # Ensure text area is editable
+        
+        for i, message in enumerate(data['message_history']):
+            is_user = message['role'] == "user"
+            speaker = "User" if is_user else data['model']
+            header_tag = "user_header" if is_user else "assistant_header"
+            content_tag = "user_content" if is_user else "assistant_content"
+            
+            # Add space between messages (but not before the first one)
+            if i > 0:
+                self.text_area.insert(tk.END, "\n\n")
+            
+            # Insert message header with background color and add padding manually
+            self.text_area.insert(tk.END, f"  {speaker}:  \n\n", header_tag)
+            
+            # Insert message content with padding before and after
+            # Add space before content for padding
+            self.text_area.insert(tk.END, "  " + message['content'].replace("\n", "\n  ") + "\n", content_tag)
+            
+        # Scroll to the end to show the latest messages
+        self.text_area.see(tk.END)
+    
+    # Markdown formatting removed
+    
+    # Markdown pattern tagging removed
     
     def delete_chat(self, filepath):
         """Delete a chat file"""
