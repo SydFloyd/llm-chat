@@ -28,26 +28,43 @@ class ChatManager:
         # Sanitize the filename
         chat_name_sanitized = re.sub(r'[<>:"/\\|?*]', '', name).strip()
         if not chat_name_sanitized:
-            # Fallback to timestamp if no valid name could be created
-            chat_name_sanitized = datetime.now().strftime("%Y%m%d%H%M%S")
+            chat_name_sanitized = "chat"
             
-        return os.path.join(self.directory, chat_name_sanitized + ".json")
+        # Add timestamp to ensure uniqueness
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        filename = f"{chat_name_sanitized}_{timestamp}.json"
+            
+        return os.path.join(self.directory, filename)
     
     def save_chat(self, filepath, model, user_text, assistant_text):
         """Save or update a chat file"""
+        now = datetime.now()
+        timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
+        
         if os.path.exists(filepath):
             with open(filepath, 'r') as file:
                 data = json.load(file)
+                # Update the last modified timestamp
+                data['last_modified'] = timestamp
         else:    
             data = {
-                'chat_creation': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                'chat_creation': timestamp,
+                'last_modified': timestamp,
                 'model': model,
                 'message_history': []
             }
 
-        # Append new messages
-        data['message_history'].append({'role': 'user', 'content': user_text})
-        data['message_history'].append({'role': 'assistant', 'content': assistant_text})
+        # Append new messages with timestamps
+        data['message_history'].append({
+            'role': 'user', 
+            'content': user_text,
+            'timestamp': timestamp
+        })
+        data['message_history'].append({
+            'role': 'assistant', 
+            'content': assistant_text,
+            'timestamp': timestamp
+        })
         
         with open(filepath, 'w') as file:
             json.dump(data, file, indent=4)
@@ -71,13 +88,47 @@ class ChatManager:
             return True
         return False
             
+    def get_display_name(self, filename):
+        """Extract display name from filename by removing timestamp"""
+        # Extract name without extension and timestamp
+        name = os.path.basename(filename)
+        if "_" in name:
+            # Remove the timestamp part (assuming format name_timestamp.json)
+            name = name.split("_")[0]
+        else:
+            # Remove extension if no timestamp
+            name = os.path.splitext(name)[0]
+        return name
+        
     def rename_chat(self, old_path, new_name):
-        """Rename a chat file"""
+        """Rename a chat file while preserving timestamp"""
         if os.path.exists(old_path):
-            new_path = os.path.join(self.directory, new_name + ".json")
-            if not os.path.exists(new_path):
-                os.rename(old_path, new_path)
-                return new_path
+            # Extract the timestamp from old filename if it exists
+            old_filename = os.path.basename(old_path)
+            timestamp_part = ""
+            
+            if "_" in old_filename:
+                # Get the timestamp part from the original filename
+                parts = os.path.splitext(old_filename)[0].split("_")
+                if len(parts) > 1:
+                    timestamp_part = "_" + parts[1]
+            
+            # If no timestamp exists, add a new one to ensure uniqueness
+            if not timestamp_part:
+                timestamp_part = "_" + datetime.now().strftime("%Y%m%d%H%M%S")
+                
+            # Create new filename with sanitized name and original timestamp
+            new_filename = re.sub(r'[<>:"/\\|?*]', '', new_name).strip() + timestamp_part + ".json"
+            new_path = os.path.join(self.directory, new_filename)
+            
+            # If the exact path already exists, add additional uniqueness
+            if os.path.exists(new_path) and new_path != old_path:
+                extra_timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                new_filename = re.sub(r'[<>:"/\\|?*]', '', new_name).strip() + "_" + extra_timestamp + ".json"
+                new_path = os.path.join(self.directory, new_filename)
+                
+            os.rename(old_path, new_path)
+            return new_path
         return None
     
     def list_chats(self):
@@ -306,7 +357,7 @@ class ChatApp:
             if i > 0:
                 self.text_area.insert(tk.END, "\n\n")
             
-            # Insert message header with background color and add padding manually
+            # Insert message header with background color (without timestamp to reduce clutter)
             self.text_area.insert(tk.END, f"  {speaker}:  \n\n", header_tag)
             
             # Insert message content with padding before and after
@@ -331,7 +382,8 @@ class ChatApp:
     
     def rename_chat(self, old_filepath):
         """Rename a chat file"""
-        old_name = os.path.basename(old_filepath).split('.')[0]
+        # Get display name without timestamp
+        old_name = self.chat_manager.get_display_name(os.path.basename(old_filepath))
         new_name = simpledialog.askstring("Rename File", "Enter new filename:", initialvalue=old_name)
         
         if not new_name:
@@ -340,14 +392,15 @@ class ChatApp:
         if new_name == old_name:
             messagebox.showinfo("No Change", "Filename is the same as before.")
             return
-            
+        
+        # Our improved rename_chat will handle duplicates automatically    
         new_filepath = self.chat_manager.rename_chat(old_filepath, new_name)
         if new_filepath:
             if old_filepath == self.current_filepath:
                 self.current_filepath = new_filepath
             self._populate_files()
         else:
-            messagebox.showerror("Error", "File with this name already exists or couldn't be renamed.")
+            messagebox.showerror("Error", "Couldn't rename the file.")
     
     def _populate_files(self):
         """Populate the file frame with buttons for each chat file"""
@@ -362,15 +415,30 @@ class ChatApp:
         for file in files:
             file_path = os.path.join(self.chat_manager.directory, file)
             
+            # Get display name (without timestamp)
+            display_name = self.chat_manager.get_display_name(file)
+            
+            # Add tooltip with full timestamp by loading creation date from file
+            try:
+                with open(file_path, 'r') as f:
+                    data = json.load(f)
+                    creation_date = data.get('chat_creation', '')
+                    tooltip = f"Created: {creation_date}" if creation_date else file
+            except (json.JSONDecodeError, FileNotFoundError):
+                tooltip = file
+            
             # Create a row frame for this file
             file_frame_row = tk.Frame(self.file_frame, bg="lightgray")
             file_frame_row.pack(fill='x', expand=False, padx=2, pady=2)
             
             # Create buttons
-            btn = tk.Button(file_frame_row, text=file.split('.')[0], 
+            btn = tk.Button(file_frame_row, text=display_name, 
                            command=lambda f=file_path: self._load_chat(f),
                            anchor="w", relief=tk.FLAT, bg="#e0e0e0")
             btn.pack(side=tk.LEFT, fill='x', expand=True)
+            
+            # Create tooltip functionality (hover text)
+            self._create_tooltip(btn, tooltip)
             
             rename_btn = tk.Button(file_frame_row, text='..', 
                                   command=lambda f=file_path: self.rename_chat(f),
@@ -385,6 +453,30 @@ class ChatApp:
         # Force update to recalculate scroll region
         self.file_frame.update_idletasks()
         self.file_canvas.configure(scrollregion=self.file_canvas.bbox("all"))
+        
+    def _create_tooltip(self, widget, text):
+        """Create a tooltip for a widget"""
+        def enter(event):
+            x, y, _, _ = widget.bbox("insert")
+            x += widget.winfo_rootx() + 25
+            y += widget.winfo_rooty() + 20
+            
+            # Create a toplevel window
+            self.tooltip = tk.Toplevel(widget)
+            self.tooltip.wm_overrideredirect(True)
+            self.tooltip.wm_geometry(f"+{x}+{y}")
+            
+            label = tk.Label(self.tooltip, text=text, justify='left',
+                           background="#ffffe0", relief="solid", borderwidth=1,
+                           font=("Arial", "8", "normal"))
+            label.pack(ipadx=1)
+            
+        def leave(event):
+            if hasattr(self, 'tooltip'):
+                self.tooltip.destroy()
+                
+        widget.bind("<Enter>", enter)
+        widget.bind("<Leave>", leave)
     
     def _load_chat(self, filepath):
         """Load a chat from file and display it"""
