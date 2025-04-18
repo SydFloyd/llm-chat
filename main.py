@@ -130,7 +130,7 @@ def populate_files_json(directory, file_frame):
         rename_btn = tk.Button(file_frame_row, text='..', command=lambda f=file_path: rename_file(f)) #✏️
         rename_btn.pack(side=tk.RIGHT)
 
-        del_btn = tk.Button(file_frame_row, text='-', command=lambda f=file_path: delete_file(f))
+        del_btn = tk.Button(file_frame_row, text='🗑', command=lambda f=file_path: delete_file(f))
         del_btn.pack(side=tk.RIGHT)
 
 # Initialize the main Tkinter window
@@ -141,7 +141,6 @@ app.title("GPT")
 directory = 'texts'  # Specify your directory here
 if not os.path.exists(directory):
     os.makedirs(directory)
-
 
 # Create a frame that will contain the canvas and scrollbar
 file_frame_container = tk.Frame(app)
