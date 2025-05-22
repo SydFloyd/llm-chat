@@ -28,6 +28,10 @@ class ColorConfig:
         self.user_prompt_color = os.environ.get("USER_PROMPT_COLOR", Fore.YELLOW)
         self.claude_output_color = os.environ.get("CLAUDE_OUTPUT_COLOR", Fore.WHITE)
         self.tool_call_color = os.environ.get("TOOL_CALL_COLOR", Fore.BLUE)
+
+        self.error_color = os.environ.get("ERROR_COLOR", Fore.RED)
+        self.warning_color = os.environ.get("WARNING_COLOR", Fore.YELLOW)
+        self.info_color = os.environ.get("INFO_COLOR", Fore.CYAN)
         
         # Whether to use colors at all
         self.use_colors = os.environ.get("USE_COLORS", "true").lower() == "true"
@@ -54,6 +58,24 @@ class ColorConfig:
         """Format tool call text (blue)"""
         if self.use_colors:
             return f"{self.tool_call_color}{text}{Style.RESET_ALL}"
+        return text
+    
+    def error(self, text):
+        """Format error text (red)"""
+        if self.use_colors:
+            return f"{self.error_color}{text}{Style.RESET_ALL}"
+        return text
+    
+    def warning(self, text):
+        """Format warning text (yellow)"""
+        if self.use_colors:
+            return f"{self.warning_color}{text}{Style.RESET_ALL}"
+        return text
+    
+    def info(self, text):
+        """Format info text (cyan)"""
+        if self.use_colors:
+            return f"{self.info_color}{text}{Style.RESET_ALL}"
         return text
 
 class Config:

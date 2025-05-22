@@ -9,7 +9,8 @@ import anthropic
 import logging
 import os
 import time
-from typing import Dict, List, Optional, Tuple, Union, Any
+import collections
+from typing import Dict, List, Optional, Tuple, Union, Any, Deque
 
 from config import cfg
 
@@ -103,9 +104,13 @@ class ClaudeClient:
     
     # Default model configurations
     DEFAULT_MODEL = 'claude-3-7-sonnet-20250219'
-    DEFAULT_MAX_TOKENS = 2048 * 4
+    DEFAULT_MAX_TOKENS = 2048 * 8
     DEFAULT_TEMPERATURE = 1
-    DEFAULT_COOLDOWN = 15  # seconds between API calls
+    DEFAULT_COOLDOWN = 3  # minimum seconds between API calls
+    
+    # Rate limit configurations
+    RATE_LIMIT_TOKENS = 20000  # Anthropic's rate limit: 20k tokens per minute
+    RATE_LIMIT_WINDOW = 60  # Window size in seconds (1 minute)
     
     # Models that support thinking
     THINKING_MODELS = ['claude-3-7-sonnet']
@@ -122,7 +127,9 @@ class ClaudeClient:
                  injected_messages: Optional[List[Dict]] = None,
                  text_editor: bool = False,
                  repo_path: str = ".",
-                 cooldown: int = DEFAULT_COOLDOWN):
+                 cooldown: int = DEFAULT_COOLDOWN,
+                 rate_limit_tokens: int = RATE_LIMIT_TOKENS,
+                 rate_limit_window: int = RATE_LIMIT_WINDOW):
         """
         Initialize a Claude client instance.
         
@@ -136,6 +143,8 @@ class ClaudeClient:
             text_editor: Whether to enable the text editor tool
             repo_path: Base path for file operations
             cooldown: Minimum time between API calls in seconds
+            rate_limit_tokens: Maximum tokens allowed per minute (Anthropic limit)
+            rate_limit_window: Time window for rate limiting in seconds
         """
         logger.info(f"Initializing Claude with model={model}, max_tokens={max_tokens}, temperature={temperature}")
         logger.debug(f"Additional params: thinking_budget={thinking_budget}, text_editor={text_editor}, repo_path={repo_path}")
@@ -152,11 +161,16 @@ class ClaudeClient:
         self.text_editor = text_editor
         self.repo_path = repo_path
         self.cooldown = cooldown
+        self.rate_limit_tokens = rate_limit_tokens
+        self.rate_limit_window = rate_limit_window
         
         # Conversation state
         self.message_history = []
         self.thinking_budget = thinking_budget
         self.last_api_call = 0
+        
+        # Rate limiting state
+        self.token_usage_history: Deque[Tuple[float, int]] = collections.deque()
         
         # Validate configuration
         self._validate_config()
@@ -248,8 +262,35 @@ class ClaudeClient:
         response = self.client.messages.create(**kwargs)
         self.last_api_call = time.time()
 
+        # Track token usage
+        self._track_token_usage(response)
+        
         # Process and handle the response
         return self._process_response(prompt, response)
+        
+    def _track_token_usage(self, response):
+        """
+        Track token usage for rate limiting purposes.
+        
+        Args:
+            response: The API response containing usage information
+        """
+        # Extract usage statistics
+        if hasattr(response, 'usage') and response.usage:
+            input_tokens = getattr(response.usage, 'input_tokens', 0)
+            output_tokens = getattr(response.usage, 'output_tokens', 0)
+            total_tokens = input_tokens + output_tokens
+            
+            # Record usage with timestamp
+            self.token_usage_history.append((time.time(), total_tokens))
+            
+            logger.debug(f"API call token usage - Input: {input_tokens}, Output: {output_tokens}, Total: {total_tokens}")
+        else:
+            logger.warning("Token usage information not available in response")
+            # If usage information is not available, use a conservative estimate
+            estimated_tokens = self.max_tokens + 1000  # Conservative estimate
+            self.token_usage_history.append((time.time(), estimated_tokens))
+            logger.debug(f"No token usage information available, using estimate: {estimated_tokens} tokens")
     
     def _prepare_api_params(self, prompt: Union[str, List[Dict]]) -> Dict:
         """Prepare parameters for the API call."""
@@ -284,12 +325,59 @@ class ClaudeClient:
         return kwargs
     
     def _apply_rate_limit(self):
-        """Apply rate limiting between API calls."""
-        elapsed = time.time() - self.last_api_call
+        """
+        Apply dynamic rate limiting based on token usage history.
+        
+        This method:
+        1. Removes usage records older than the rate limit window
+        2. Calculates current token usage within the window
+        3. Determines wait time needed to stay under the token rate limit
+        4. Enforces a minimum cooldown period between requests
+        """
+        current_time = time.time()
+        
+        # Apply minimum cooldown between requests
+        elapsed = current_time - self.last_api_call
         if elapsed < self.cooldown:
-            wait_time = self.cooldown - elapsed
-            logger.debug(f"Rate limiting: waiting {wait_time:.2f} seconds")
-            time.sleep(wait_time)
+            min_wait_time = self.cooldown - elapsed
+            logger.debug(f"Minimum cooldown: waiting {min_wait_time:.2f} seconds")
+            time.sleep(min_wait_time)
+            current_time = time.time()  # Update current time after waiting
+        
+        # Remove token usage records older than the rate limit window
+        window_start = current_time - self.rate_limit_window
+        while self.token_usage_history and self.token_usage_history[0][0] < window_start:
+            self.token_usage_history.popleft()
+        
+        # Calculate current token usage within the window
+        current_usage = sum(usage[1] for usage in self.token_usage_history)
+        
+        # Estimate tokens for next request (include max_tokens for response)
+        # This is a conservative estimate to avoid rate limit errors
+        estimated_next_request = self.max_tokens + 1000  # Add buffer for prompt tokens
+        
+        # Calculate available token capacity
+        available_capacity = self.rate_limit_tokens - current_usage
+        
+        if available_capacity < estimated_next_request:
+            # Need to wait for some tokens to free up from the window
+            if self.token_usage_history:
+                # Calculate time when oldest record will expire from window
+                oldest_record_time = self.token_usage_history[0][0]
+                # Calculate how much of the window needs to pass to free up enough tokens
+                oldest_record_tokens = self.token_usage_history[0][1]
+                
+                # Calculate what portion of the window we need to wait for
+                wait_fraction = (estimated_next_request - available_capacity) / oldest_record_tokens
+                wait_time = max(0, (oldest_record_time + self.rate_limit_window) - current_time) * wait_fraction
+                
+                logger.debug(f"Rate limiting: waiting {wait_time:.2f} seconds to free up tokens. " 
+                             f"Current usage: {current_usage}/{self.rate_limit_tokens} tokens")
+                time.sleep(wait_time)
+            else:
+                # Should not happen, but just in case
+                logger.warning("Rate limit calculation issue - no history but insufficient capacity")
+                time.sleep(1)  # Small wait as a fallback
     
     def _process_response(self, prompt: Union[str, List[Dict]], response: Any) -> str:
         """
@@ -404,6 +492,40 @@ class ClaudeClient:
         """Clear the conversation history."""
         self.message_history = []
         logger.info("Conversation history cleared")
+        
+    def get_token_usage_stats(self) -> Dict:
+        """
+        Get statistics about the current token usage within the rate limit window.
+        
+        Returns:
+            Dict containing token usage statistics
+        """
+        current_time = time.time()
+        window_start = current_time - self.rate_limit_window
+        
+        # Clean up expired records
+        while self.token_usage_history and self.token_usage_history[0][0] < window_start:
+            self.token_usage_history.popleft()
+            
+        # Calculate current usage
+        current_usage = sum(usage[1] for usage in self.token_usage_history)
+        usage_percent = (current_usage / self.rate_limit_tokens) * 100 if self.rate_limit_tokens > 0 else 0
+        
+        # Calculate time until full capacity
+        time_until_full_capacity = 0
+        if self.token_usage_history and current_usage > 0:
+            oldest_record_time = self.token_usage_history[0][0]
+            time_until_full_capacity = max(0, (oldest_record_time + self.rate_limit_window) - current_time)
+            
+        return {
+            "window_size_seconds": self.rate_limit_window,
+            "token_limit": self.rate_limit_tokens,
+            "current_usage": current_usage,
+            "available_tokens": self.rate_limit_tokens - current_usage,
+            "usage_percent": usage_percent,
+            "request_count": len(self.token_usage_history),
+            "time_until_full_capacity_seconds": time_until_full_capacity
+        }
 
 
 
@@ -460,22 +582,24 @@ if __name__ == "__main__":
         "Make your tool calls with relative paths. "
     )
     
-    # Initialize the Claude client
+    # Initialize the Claude client with dynamic rate limiting
     client = ClaudeClient(
         system_message=system_message, 
         thinking_budget=2048, 
-        text_editor=True
+        text_editor=True,
+        cooldown=3,  # Minimum delay between requests (seconds)
+        rate_limit_tokens=20000,  # Anthropic's rate limit: 20k tokens per minute
+        rate_limit_window=60  # Window size in seconds (1 minute)
     )
-    logger.info("Claude client initialized")
+    logger.info("Claude client initialized with dynamic rate limiting")
 
     context = load_context_from_file("llm.txt")
-
-    print(context)
     
     # Example initial prompt
     initial_prompt = (
         context +
-        "Update main.py so that ctrl+backspace deletes the previous word in the text area. "
+        "Tell me what the most obvious high-impact optimizations can be made to claude_w_tools.py. "
+        "Don't make any changes yet, just tell me what you would do. "
     )
     print("Initial prompt sent.")
     client.prompt(initial_prompt)
@@ -483,19 +607,50 @@ if __name__ == "__main__":
     # Main interaction loop
     while True:
         try:
+            # Display token usage statistics
+            usage_stats = client.get_token_usage_stats()
+            usage_info = (
+                f"\nToken usage: {usage_stats['current_usage']}/{usage_stats['token_limit']} "
+                f"({usage_stats['usage_percent']:.1f}%)"
+            )
+            if usage_stats['time_until_full_capacity_seconds'] > 1:
+                usage_info += f" - Full capacity in {usage_stats['time_until_full_capacity_seconds']:.1f}s"
+            print(cfg.colors.info(usage_info))
+            
             prompt_text = cfg.colors.user_prompt("\nPrompt: ")
             user_prompt = input(prompt_text)
+            
             if user_prompt.lower() in ("exit", "quit"):
                 logger.info("User requested exit")
                 break
+            elif user_prompt.lower() == "stats":
+                # Detailed usage statistics
+                stats = client.get_token_usage_stats()
+                print(cfg.colors.info("\nDetailed Rate Limit Statistics:"))
+                for key, value in stats.items():
+                    if isinstance(value, float):
+                        print(f"  {key}: {value:.2f}")
+                    else:
+                        print(f"  {key}: {value}")
+                continue
+            elif user_prompt.lower() == "clear":
+                # Clear conversation history
+                client.clear_conversation()
+                print(cfg.colors.info("Conversation history cleared"))
+                continue
                 
             client.prompt(user_prompt)
             
         except KeyboardInterrupt:
             logger.info("User interrupted the application")
             break
+        except anthropic.RateLimitError as e:
+            logger.error(f"Rate limit error: {str(e)}")
+            print(cfg.colors.error(f"Rate limit exceeded: {str(e)}"))
+            print(cfg.colors.info("Waiting 10 seconds before continuing..."))
+            time.sleep(10)
         except Exception as e:
             logger.error(f"Error during prompt: {str(e)}")
-            print(f"An error occurred: {str(e)}")
+            print(cfg.colors.error(f"An error occurred: {str(e)}"))
     
     logger.info("Application shutting down")
