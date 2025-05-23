@@ -20,12 +20,29 @@ logger = logging.getLogger(__name__)
 # Import utility functions for file and tool operations
 from utils import view_file, view_directory, str_replace, create_file, insert_text, undo_edit
 
+# Default working directory - used for file operations
+DEFAULT_REPO_PATH = "."
+
 
 class ToolHandler:
     """Handles the execution of tool operations requested by Claude."""
     
-    @staticmethod
-    def handle_tool(tool_call: Any) -> Tuple[str, bool]:
+    # Class variable to store the target directory
+    repo_path = DEFAULT_REPO_PATH
+    
+    @classmethod
+    def set_repo_path(cls, path: str):
+        """Set the target directory for file operations."""
+        if os.path.isdir(path):
+            cls.repo_path = path
+            logger.info(f"ToolHandler repo_path set to: {path}")
+            return True
+        else:
+            logger.error(f"Invalid repo_path: {path} is not a directory")
+            return False
+    
+    @classmethod
+    def handle_tool(cls, tool_call: Any) -> Tuple[str, bool]:
         """
         Process a tool call from Claude and execute the appropriate action.
         
@@ -39,12 +56,17 @@ class ToolHandler:
         command = input_params.get('command', '')
         file_path = input_params.get('path', '')
         
+        # Convert relative paths to absolute using the repo_path
+        if not os.path.isabs(file_path):
+            file_path = os.path.join(cls.repo_path, file_path)
+            logger.debug(f"Converted relative path to absolute: {file_path}")
+        
         command_handlers = {
-            'view': ToolHandler._handle_view,
-            'str_replace': ToolHandler._handle_str_replace,
-            'create': ToolHandler._handle_create,
-            'insert': ToolHandler._handle_insert,
-            'undo_edit': ToolHandler._handle_undo_edit
+            'view': cls._handle_view,
+            'str_replace': cls._handle_str_replace,
+            'create': cls._handle_create,
+            'insert': cls._handle_insert,
+            'undo_edit': cls._handle_undo_edit
         }
         
         if command in command_handlers:
@@ -52,8 +74,8 @@ class ToolHandler:
         else:
             return f"Error: Unknown command '{command}'", True
     
-    @staticmethod
-    def _handle_view(params: Dict, file_path: str) -> Tuple[str, bool]:
+    @classmethod
+    def _handle_view(cls, params: Dict, file_path: str) -> Tuple[str, bool]:
         """Handle view command for files or directories."""
         if os.path.isdir(file_path):
             show_details = params.get('details', False)
@@ -64,8 +86,8 @@ class ToolHandler:
         else:
             return f"Error: '{file_path}' does not exist or is not accessible", True
     
-    @staticmethod
-    def _handle_str_replace(params: Dict, file_path: str) -> Tuple[str, bool]:
+    @classmethod
+    def _handle_str_replace(cls, params: Dict, file_path: str) -> Tuple[str, bool]:
         """Handle string replacement in files."""
         old_str = params.get('old_str', '')
         new_str = params.get('new_str', None)
@@ -73,23 +95,23 @@ class ToolHandler:
             return "Error: 'new_str' is required", True
         return str_replace(file_path, old_str, new_str)
     
-    @staticmethod
-    def _handle_create(params: Dict, file_path: str) -> Tuple[str, bool]:
+    @classmethod
+    def _handle_create(cls, params: Dict, file_path: str) -> Tuple[str, bool]:
         """Handle file creation."""
         file_text = params.get('file_text', '')
         overwrite = params.get('overwrite', False)
         return create_file(file_path, file_text, overwrite)
     
-    @staticmethod
-    def _handle_insert(params: Dict, file_path: str) -> Tuple[str, bool]:
+    @classmethod
+    def _handle_insert(cls, params: Dict, file_path: str) -> Tuple[str, bool]:
         """Handle text insertion into files."""
         insert_line = params.get('insert_line', 0)
         new_str = params.get('new_str', '')
         preserve_newline = params.get('preserve_newline', True)
         return insert_text(file_path, new_str, insert_line, preserve_newline)
     
-    @staticmethod
-    def _handle_undo_edit(params: Dict, file_path: str) -> Tuple[str, bool]:
+    @classmethod
+    def _handle_undo_edit(cls, params: Dict, file_path: str) -> Tuple[str, bool]:
         """Handle undoing the last edit to a file."""
         return undo_edit(file_path)
 
@@ -163,6 +185,9 @@ class ClaudeClient:
         self.cooldown = cooldown
         self.rate_limit_tokens = rate_limit_tokens
         self.rate_limit_window = rate_limit_window
+        
+        # Configure ToolHandler with the repository path
+        ToolHandler.set_repo_path(repo_path)
         
         # Conversation state
         self.message_history = []
@@ -529,12 +554,13 @@ class ClaudeClient:
 
 
 
-def load_context_from_file(context_file="llm.txt") -> str:
+def load_context_from_file(context_file="llm.txt", repo_path=DEFAULT_REPO_PATH) -> str:
     """
     Load additional context from a file listing paths to include.
     
     Args:
         context_file: Path to file containing paths to include
+        repo_path: Base directory for resolving relative paths
         
     Returns:
         Compiled system message with included file contents
@@ -544,6 +570,10 @@ def load_context_from_file(context_file="llm.txt") -> str:
         "Please use this information to assist in the task. "
     )
     
+    # Resolve the context file path relative to repo_path if it's a relative path
+    if not os.path.isabs(context_file):
+        context_file = os.path.join(repo_path, context_file)
+    
     try:
         with open(context_file, "r", encoding="utf-8") as f:
             lines_to_include = f.readlines()
@@ -551,17 +581,20 @@ def load_context_from_file(context_file="llm.txt") -> str:
         lines_to_include = [x.strip() for x in lines_to_include]
         
         for line in lines_to_include:
-            if os.path.isfile(line):
+            # Resolve path relative to repo_path if it's a relative path
+            path = line if os.path.isabs(line) else os.path.join(repo_path, line)
+            
+            if os.path.isfile(path):
                 try:
                     # Try UTF-8 first, which is most common
-                    with open(line, "r", encoding="utf-8") as f:
+                    with open(path, "r", encoding="utf-8") as f:
                         base_message += f"\n{line} file:\n{f.read()}\n\n"
                 except UnicodeDecodeError:
                     # Fall back to latin-1, which can decode any byte value
-                    with open(line, "r", encoding="latin-1") as f:
+                    with open(path, "r", encoding="latin-1") as f:
                         base_message += f"\n{line} file:\n{f.read()}\n\n"
-            elif os.path.isdir(line):
-                base_message += f"\n{line} dir:\n{os.listdir(line)}\n\n"
+            elif os.path.isdir(path):
+                base_message += f"\n{line} dir:\n{os.listdir(path)}\n\n"
             else:
                 base_message += f"\n{line}\n"
     except Exception as e:
@@ -575,6 +608,9 @@ if __name__ == "__main__":
     logger = cfg.setup_logging()
     logger.info("Application starting")
     
+    # Define the repository path - this will be the base directory for file operations
+    repo_path = DEFAULT_REPO_PATH
+    
     # Load system message with additional context
     system_message = (
         "You are a helpful coding assistant. "
@@ -587,20 +623,34 @@ if __name__ == "__main__":
         system_message=system_message, 
         thinking_budget=2048, 
         text_editor=True,
+        repo_path=repo_path,  # Pass the repository path
         cooldown=3,  # Minimum delay between requests (seconds)
         rate_limit_tokens=20000,  # Anthropic's rate limit: 20k tokens per minute
         rate_limit_window=60  # Window size in seconds (1 minute)
     )
-    logger.info("Claude client initialized with dynamic rate limiting")
+    logger.info(f"Claude client initialized with repo_path: {repo_path}")
 
-    context = load_context_from_file("llm.txt")
+    # Load context from file
+    context = load_context_from_file("llm.txt", repo_path=repo_path)
     
-    # Example initial prompt
-    initial_prompt = (
-        context +
-        "Tell me what the most obvious high-impact optimizations can be made to claude_w_tools.py. "
-        "Don't make any changes yet, just tell me what you would do. "
-    )
+    # Read initial prompt from file
+    initial_prompt_file = os.path.join(repo_path, "initial_prompt.txt")
+    try:
+        if os.path.isfile(initial_prompt_file):
+            with open(initial_prompt_file, "r", encoding="utf-8") as f:
+                initial_prompt_text = f.read().strip()
+                
+            # Combine context with the prompt from file
+            initial_prompt = context + initial_prompt_text
+            print(f"Initial prompt loaded from {initial_prompt_file}")
+        else:
+            # Fallback if the file doesn't exist
+            logger.warning(f"Initial prompt file not found: {initial_prompt_file}")
+            initial_prompt = context + "How can I help you today?"
+    except Exception as e:
+        logger.error(f"Error reading initial prompt: {str(e)}")
+        initial_prompt = context + "How can I help you today?"
+    
     print("Initial prompt sent.")
     client.prompt(initial_prompt)
     

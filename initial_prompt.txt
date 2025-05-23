@@ -1,0 +1,1 @@
+Please update claude_w_tools.py to make it easier to change the target directory, ensuring tools work accordingly.  Also move the initial prompt to initial_prompt.txt.  <3
